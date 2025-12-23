@@ -1,0 +1,98 @@
+name: Daily Build
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # 3am UTC daily
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  PROJECTNAME: pkmgr
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os_name: linux
+            arch: amd64
+          - target: aarch64-unknown-linux-musl
+            os_name: linux
+            arch: arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set build info
+        run: |
+          echo "VERSION=$(date -u +"%Y%m%d%H%M%S")" >> $GITHUB_ENV
+          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date +"%a %b %d, %Y at %H:%M:%S %Z")" >> $GITHUB_ENV
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/pkmgr ${{ env.PROJECTNAME }}-${{ matrix.os_name }}-${{ matrix.arch }}
+          chmod +x ${{ env.PROJECTNAME }}-${{ matrix.os_name }}-${{ matrix.arch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PROJECTNAME }}-${{ matrix.os_name }}-${{ matrix.arch }}
+          path: ${{ env.PROJECTNAME }}-${{ matrix.os_name }}-${{ matrix.arch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          merge-multiple: true
+
+      - name: Set version
+        run: echo "VERSION=$(date -u +"%Y%m%d%H%M%S")" >> $GITHUB_ENV
+
+      - name: Create version.txt
+        run: echo "${{ env.VERSION }}" > binaries/version.txt
+
+      - name: Delete previous daily release
+        run: |
+          gh release delete daily --yes 2>/dev/null || true
+          git push origin :refs/tags/daily 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: daily
+          name: "Daily Build ${{ env.VERSION }}"
+          files: binaries/*
+          prerelease: true
+          body: "Daily build: ${{ env.VERSION }}"

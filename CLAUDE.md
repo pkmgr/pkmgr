@@ -194,7 +194,7 @@ Format: `{binary} v{version} ({commit}) built {date}`
 - ✅ All 8 core commands (install, remove, update, search, list, info, where, whatis)
 - ✅ Language version management (8-level resolution priority)
 - ✅ Binary asset management (GitHub/GitLab)
-- ✅ ISO management (30+ distributions)
+- ✅ ISO management (43+ distributions including Windows XP-11, Server 2000-2022)
 - ✅ USB bootable media creation
 - ✅ Repository management with GPG verification
 - ✅ Error recovery system (250+ patterns)
@@ -1369,8 +1369,15 @@ SSL/TLS: Verify certificates by default (--insecure to disable)
 Cache directory size limit: 5 GB
 Cache cleanup: When exceeds 4 GB (keep 20% free)
 Cache expiry: 30 days for package metadata, 90 days for downloads
+ISO storage location: ~/Downloads/ISOs (platform-appropriate Downloads folder)
+ISO directory structure: 
+  - linux/{desktop,server,security,utility,minimal,specialty}/{name}-{ver}-{arch}.iso
+  - windows/{name}-{ver}-{arch}.iso
+  - bsd/{name}-{ver}-{arch}.iso
+  - other/{name}-{ver}-{arch}.iso
 ISO storage warning: When < 10 GB free space
 ISO download space check: Require 2x ISO size free
+ISO version default: Latest (current) version when no version specified
 USB minimum size: 4-8 GB for single ISO
 USB minimum size: At least 16 GB for multi-boot (prefer 64+, support for 128GB+)
 USB maximum ISOs: 50 per device

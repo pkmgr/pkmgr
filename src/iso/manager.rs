@@ -45,21 +45,24 @@ impl IsoManager {
     pub async fn list_downloaded(&self) -> Result<()> {
         self.output.print_header("💿 Downloaded ISOs");
 
-        // Create directory structure as specified
-        let os_dir = self.iso_dir.join("OS");
-        let security_dir = self.iso_dir.join("Security");
-        let server_dir = self.iso_dir.join("Server");
-        let tools_dir = self.iso_dir.join("Tools");
+        // Directory structure as specified in CLAUDE.md
+        let categories = vec![
+            ("Linux Desktop", "linux/desktop"),
+            ("Linux Server", "linux/server"),
+            ("Linux Security", "linux/security"),
+            ("Linux Utility", "linux/utility"),
+            ("Linux Minimal", "linux/minimal"),
+            ("Linux Specialty", "linux/specialty"),
+            ("Windows", "windows"),
+            ("BSD", "bsd"),
+            ("Other OS", "other"),
+        ];
 
         let mut found_any = false;
 
         // Check each category directory
-        for (category_name, category_dir) in [
-            ("Operating Systems", os_dir),
-            ("Security", security_dir),
-            ("Server", server_dir),
-            ("Tools", tools_dir),
-        ] {
+        for (category_name, category_path) in categories {
+            let category_dir = self.iso_dir.join(category_path);
             if category_dir.exists() {
                 if let Ok(entries) = std::fs::read_dir(&category_dir) {
                     let isos: Vec<String> = entries
@@ -135,22 +138,38 @@ impl IsoManager {
             .ok_or_else(|| anyhow::anyhow!("No download URL available for this version"))?;
 
         // Determine download path based on category
-        let category_dir = match distro.category {
-            DistributionCategory::Linux => "OS/Linux",
-            DistributionCategory::Security => "Security",
-            DistributionCategory::Server => "Server",
-            DistributionCategory::BSD => "OS/BSD",
-            DistributionCategory::Utility => "Tools",
+        // Structure: linux/{desktop,server,security,utility,minimal,specialty}/{name}-{ver}-{arch}.iso
+        //            windows/{name}-{ver}-{arch}.iso, bsd/{name}-{ver}-{arch}.iso, other/{name}-{ver}-{arch}.iso
+        let category_path = match distro.category {
+            DistributionCategory::Linux => {
+                // Determine subcategory based on distribution properties
+                if distro.name.contains("ubuntu") || distro.name.contains("mint") || 
+                   distro.name.contains("fedora") || distro.name.contains("manjaro") ||
+                   distro.name.contains("arch") || distro.name.contains("opensuse") {
+                    "linux/desktop"
+                } else if distro.description.contains("minimal") || distro.description.contains("lightweight") {
+                    "linux/minimal"
+                } else if distro.description.contains("source") || distro.description.contains("declarative") {
+                    "linux/specialty"
+                } else {
+                    "linux/desktop"
+                }
+            },
+            DistributionCategory::Security => "linux/security",
+            DistributionCategory::Server => "linux/server",
+            DistributionCategory::BSD => "bsd",
+            DistributionCategory::Utility => "linux/utility",
+            DistributionCategory::Windows => "windows",
+            DistributionCategory::Other => "other",
         };
 
-        let download_dir = self.iso_dir.join(category_dir).join(&distro.display_name);
+        let download_dir = self.iso_dir.join(category_path);
         tokio::fs::create_dir_all(&download_dir).await?;
 
         let iso_filename = format!(
-            "{}-{}-{}-{}.iso",
+            "{}-{}-{}.iso",
             distro_name,
             iso_version.version,
-            flavor,
             arch
         );
         let iso_path = download_dir.join(&iso_filename);
@@ -231,7 +250,11 @@ impl IsoManager {
         self.output.print_header(&format!("🗑️ Removing ISO: {}", iso_file));
 
         // Search for the ISO in all category directories
-        let categories = ["OS/Linux", "OS/BSD", "OS/Windows", "OS/Mac", "Security", "Server", "Tools"];
+        let categories = [
+            "linux/desktop", "linux/server", "linux/security", 
+            "linux/utility", "linux/minimal", "linux/specialty",
+            "windows", "bsd", "other"
+        ];
 
         for category in &categories {
             let category_dir = self.iso_dir.join(category);

@@ -23,6 +23,8 @@ pub enum DistributionCategory {
     Server,
     BSD,
     Utility,
+    Windows,
+    Other,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +69,8 @@ impl std::fmt::Display for DistributionCategory {
             DistributionCategory::Server => write!(f, "Server/Enterprise"),
             DistributionCategory::BSD => write!(f, "BSD Systems"),
             DistributionCategory::Utility => write!(f, "Utility/Rescue Tools"),
+            DistributionCategory::Windows => write!(f, "Windows"),
+            DistributionCategory::Other => write!(f, "Other Operating Systems"),
         }
     }
 }

@@ -1,0 +1,170 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]*.[0-9]*.[0-9]*'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  PROJECTNAME: pkmgr
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            binary_name: pkmgr-linux-amd64
+          # Linux ARM64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            binary_name: pkmgr-linux-arm64
+          # macOS x86_64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary_name: pkmgr-darwin-amd64
+          # macOS ARM64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary_name: pkmgr-darwin-arm64
+          # Windows x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_name: pkmgr-windows-amd64.exe
+          # Windows ARM64 (skip for now - cross-compilation complex)
+          # - os: windows-latest
+          #   target: aarch64-pc-windows-msvc
+          #   binary_name: pkmgr-windows-arm64.exe
+          # FreeBSD builds (skip for now - require cross toolchain)
+          # - os: ubuntu-latest
+          #   target: x86_64-unknown-freebsd
+          #   binary_name: pkmgr-freebsd-amd64
+          # - os: ubuntu-latest
+          #   target: aarch64-unknown-freebsd
+          #   binary_name: pkmgr-freebsd-arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build binary
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Rename binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cp target/${{ matrix.target }}/release/pkmgr ${{ matrix.binary_name }}
+          chmod +x ${{ matrix.binary_name }}
+
+      - name: Rename binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Copy-Item target\${{ matrix.target }}\release\pkmgr.exe ${{ matrix.binary_name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary_name }}
+          path: ${{ matrix.binary_name }}
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          merge-multiple: true
+
+      - name: Set version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # VERSION for version.txt (strip v if present)
+          echo "VERSION=${TAG#v}" >> $GITHUB_ENV
+          # RELEASE_TAG: add v prefix only if semver without v
+          if [[ "$TAG" == v* ]]; then
+            echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+          elif [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "RELEASE_TAG=v$TAG" >> $GITHUB_ENV
+          else
+            echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+          fi
+
+      - name: Create version.txt
+        run: echo "${{ env.VERSION }}" > binaries/version.txt
+
+      - name: Create source archive
+        run: |
+          tar --exclude='.git' --exclude='.github' --exclude='.gitea' \
+            --exclude='target' --exclude='binaries' --exclude='*.tar.gz' \
+            -czf binaries/${{ env.PROJECTNAME }}-${{ env.VERSION }}-source.tar.gz .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: binaries/*
+          generate_release_notes: true
+          make_latest: true
