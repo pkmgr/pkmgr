@@ -1,0 +1,30 @@
+# Docker Compose for pkmgr multi-environment testing
+# Per project policy: Use Docker for building, Incus for testing
+
+version: '3.8'
+
+services:
+  # Primary development environment
+  pkmgr-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: builder
+    container_name: pkmgr-dev
+    volumes:
+      - ..:/app
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/app/target
+    working_dir: /app
+    command: /bin/bash
+    stdin_open: true
+    tty: true
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+
+volumes:
+  cargo-cache:
+    driver: local
+  target-cache:
+    driver: local
